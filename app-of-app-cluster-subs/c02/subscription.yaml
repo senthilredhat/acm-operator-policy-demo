@@ -1,0 +1,18 @@
+apiVersion: apps.open-cluster-management.io/v1
+kind: Subscription
+metadata:
+  name: c02-cluster-apps
+  namespace: c02
+  labels:
+    app: c02-cluster-apps
+  annotations:
+    apps.open-cluster-management.io/git-branch: main
+    apps.open-cluster-management.io/git-path: clusters/c02
+    apps.open-cluster-management.io/reconcile-option: merge
+    apps.open-cluster-management.io/subscription-admin: "true"
+spec:
+  channel: acm-operator-policy-demo-ns/acm-operator-policy-demo
+  placement:
+    placementRef:
+      kind: Placement
+      name: hub-cluster-placement
