@@ -38,9 +38,8 @@ spec:
           operatorGroup:
             name: gitlab-operator-group
             namespace: gitlab-system
-            spec:
-              targetNamespaces:
-                - gitlab-system
+            targetNamespaces:
+              - gitlab-system
           subscription:
             name: gitlab-operator-kubernetes
             namespace: gitlab-system
