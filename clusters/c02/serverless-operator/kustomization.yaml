@@ -5,4 +5,4 @@ resources:
   - ../../../components/serverless-operator
   - placement-binding.yaml
 
-namespace: c02
+namespace: c02-policies
