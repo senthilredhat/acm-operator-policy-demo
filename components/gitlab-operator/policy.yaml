@@ -34,6 +34,7 @@ spec:
           remediationAction: enforce
           severity: medium
           complianceType: musthave
+          upgradeApproval: Automatic
           subscription:
             name: gitlab-operator-kubernetes
             namespace: gitlab-system
