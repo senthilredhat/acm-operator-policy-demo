@@ -156,6 +156,7 @@ oc apply -k app-of-app-manifest/
 This creates:
 - `acm-operator-policy-demo-ns` namespace and Git channel
 - `policies` namespace
+- **ManagedClusterSetBinding** to bind the `global` clusterset to the `policies` namespace
 - Application and Subscription pointing to `app-of-app-cluster-subs`
 - Placement targeting the hub cluster (local-cluster)
 
@@ -283,6 +284,40 @@ git push origin main
 ```
 
 ## Troubleshooting
+
+### Placement Not Selecting Clusters
+
+If the placement shows `SUCCEEDED = False` with reason `NoManagedClusterSetBindings`:
+
+```bash
+# Check placement status
+oc get placement hub-cluster-placement -n policies
+
+# Verify ManagedClusterSetBinding exists
+oc get managedclustersetbinding -n policies
+```
+
+**Solution**: The `global` ManagedClusterSetBinding should be created automatically by the bootstrap. If missing, verify:
+- The managedclustersetbinding.yaml file exists in `app-of-app-manifest/initialize-acm-gitops/`
+- The file is listed in the kustomization.yaml resources
+- The Git repository has been synced
+
+### No Cluster Subscription Created
+
+If no subscription appears in the `c01` namespace:
+
+```bash
+# Check if top-level subscription is working
+oc get subscription cluster-subscriptions -n policies
+
+# Check placement decisions
+oc get placementdecision -n policies
+
+# If no decisions, check the placement
+oc describe placement hub-cluster-placement -n policies
+```
+
+The placement must successfully select local-cluster before resources are deployed.
 
 ### Policy Shows Non-Compliant
 
