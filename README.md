@@ -85,9 +85,10 @@ This demo showcases:
 │       ├── application.yaml
 │       ├── subscription.yaml   # Points to clusters/c01
 │       └── kustomization.yaml
-├── app-of-app-manifest/         # Bootstrap resources
-│   ├── channel/                # Git channel
-│   └── policy-deployment/      # Top-level subscription (points to app-of-app-cluster-subs)
+├── app-of-app-manifest/         # Bootstrap - one-shot initialization
+│   ├── kustomization.yaml      # Deploys channel + initialize-acm-gitops
+│   ├── channel/                # Git channel definition
+│   └── initialize-acm-gitops/  # Top-level subscription (points to app-of-app-cluster-subs)
 └── docs/                        # Documentation
 ```
 
@@ -142,34 +143,32 @@ oc get managedcluster c01 --show-labels
 oc label managedcluster c01 environment=qa
 ```
 
-### Step 2: Apply Channel Configuration
+### Step 2: Initialize ACM GitOps (One-Shot Bootstrap)
 
-Create the Git channel that points to this repository:
-
-```bash
-oc apply -k app-of-app-manifest/channel/
-```
-
-Verify the channel is created:
+Deploy all bootstrap resources in one command:
 
 ```bash
-oc get channel -n acm-operator-policy-demo-ns
-```
-
-### Step 3: Deploy via GitOps (App-of-Apps Pattern)
-
-Deploy the top-level subscription that will create cluster-level subscriptions:
-
-```bash
-oc apply -k app-of-app-manifest/policy-deployment/
+oc apply -k app-of-app-manifest/
 ```
 
 This creates:
+- `acm-operator-policy-demo-ns` namespace and Git channel
 - `policies` namespace
 - Application and Subscription pointing to `app-of-app-cluster-subs`
 - Placement targeting the hub cluster (local-cluster)
 
-### Step 4: Verify Cluster Subscription Deployment
+Verify the resources were created:
+
+```bash
+# Verify channel
+oc get channel -n acm-operator-policy-demo-ns
+
+# Verify top-level subscription
+oc get subscription -n policies
+oc get application -n policies
+```
+
+### Step 3: Verify Cluster Subscription Deployment
 
 Wait for the subscription to sync (may take 1-2 minutes):
 
@@ -197,7 +196,7 @@ oc get placementbinding -n policies
 
 Expected policy name: `gitlab-operator-policy-all-qa-c01`
 
-### Step 5: Verify Policy Propagation
+### Step 4: Verify Policy Propagation
 
 Check that the policy is compliant on the managed cluster:
 
@@ -212,7 +211,7 @@ oc describe policy gitlab-operator-policy-all-qa-c01 -n policies
 oc get placementdecision -n policies
 ```
 
-### Step 6: Verify Operator Installation on Managed Cluster (c01)
+### Step 5: Verify Operator Installation on Managed Cluster (c01)
 
 The OperatorPolicy will install the GitLab operator on cluster c01:
 
@@ -429,6 +428,15 @@ app-of-app-cluster-subs/c01/
 └── kustomization.yaml
 ```
 
+### Bootstrap Layer (`app-of-app-manifest/`)
+One-shot initialization of the entire GitOps system:
+```bash
+app-of-app-manifest/
+├── kustomization.yaml          # Single entry point - deploys everything below
+├── channel/                    # Git channel pointing to this repo
+└── initialize-acm-gitops/      # Top-level subscription pointing to app-of-app-cluster-subs
+```
+
 ### Groups Layer (`groups/`)
 Kustomize components for reusable configurations:
 - `groups/all/`: Common to all clusters
@@ -446,6 +454,20 @@ oc kustomize app-of-app-cluster-subs/c01/
 # Validate the kustomization
 oc kustomize clusters/c01/gitlab-operator/ | oc apply --dry-run=client -f -
 ```
+
+## Validation Script
+
+**Important**: Run the validation script whenever you make changes to the structure:
+
+```bash
+./validate.sh
+```
+
+This script validates:
+- All kustomize builds complete successfully
+- Subscription git-paths point to correct directories
+- PlacementBinding correctly references the Placement
+- Resource naming consistency across layers
 
 ## Benefits of This Architecture
 

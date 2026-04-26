@@ -4,7 +4,7 @@ metadata:
   name: gitlab-operator-placement-binding
   namespace: policies
 placementRef:
-  name: gitlab-operator-placement
+  name: gitlab-operator-placement-all-qa-c01
   apiGroup: cluster.open-cluster-management.io
   kind: Placement
 subjects:
