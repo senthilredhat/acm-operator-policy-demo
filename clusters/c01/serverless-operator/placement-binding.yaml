@@ -4,10 +4,10 @@ metadata:
   name: openshift-serverless-placement-binding
   namespace: policies
 placementRef:
-  name: openshift-serverless-placement-all-qa-c01
+  name: gitlab-operator-placement-all-qa-c01
   apiGroup: cluster.open-cluster-management.io
   kind: Placement
 subjects:
-  - name: openshift-serverless-policy-all-qa-c01
+  - name: gitlab-operator-policy-all-qa-c01
     apiGroup: policy.open-cluster-management.io
     kind: Policy
