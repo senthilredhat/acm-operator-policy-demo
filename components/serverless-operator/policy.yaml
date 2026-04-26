@@ -47,8 +47,6 @@ spec:
           operatorGroup:
             name: openshift-serverless
             namespace: openshift-serverless
-            targetNamespaces:
-              - openshift-serverless
           subscription:
             name: serverless-operator
             namespace: openshift-serverless
