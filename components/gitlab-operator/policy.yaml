@@ -26,6 +26,25 @@ spec:
                 metadata:
                   name: gitlab-system
     - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: gitlab-operator-operatorgroup
+        spec:
+          remediationAction: enforce
+          severity: medium
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operators.coreos.com/v1
+                kind: OperatorGroup
+                metadata:
+                  name: gitlab-operator-group
+                  namespace: gitlab-system
+                spec:
+                  targetNamespaces:
+                    - gitlab-system
+    - objectDefinition:
         apiVersion: policy.open-cluster-management.io/v1beta1
         kind: OperatorPolicy
         metadata:
