@@ -2,7 +2,7 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PlacementBinding
 metadata:
   name: openshift-serverless-placement-binding
-  namespace: policies
+  namespace: c01
 placementRef:
   name: serverless-operator-placement-all-qa-c01
   apiGroup: cluster.open-cluster-management.io

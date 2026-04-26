@@ -5,4 +5,4 @@ resources:
   - ../../../components/gitlab-operator
   - placement-binding.yaml
 
-namespace: policies
+namespace: c02

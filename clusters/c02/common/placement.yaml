@@ -2,7 +2,7 @@ apiVersion: cluster.open-cluster-management.io/v1beta1
 kind: Placement
 metadata:
   name: gitlab-operator-placement
-  namespace: policies
+  namespace: c02
 spec:
   predicates:
     - requiredClusterSelector:
@@ -14,7 +14,7 @@ apiVersion: cluster.open-cluster-management.io/v1beta1
 kind: Placement
 metadata:
   name: serverless-operator-placement
-  namespace: policies
+  namespace: c02
 spec:
   predicates:
     - requiredClusterSelector:
