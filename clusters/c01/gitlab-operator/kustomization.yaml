@@ -6,5 +6,6 @@ components:
 
 resources:
   - ../../../components/gitlab-operator
+  - placement-binding.yaml
 
 namespace: policies

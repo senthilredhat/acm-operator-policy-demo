@@ -1,13 +1,13 @@
 apiVersion: apps.open-cluster-management.io/v1
 kind: Subscription
 metadata:
-  name: cluster-subscriptions
-  namespace: policies
+  name: c01-cluster-apps
+  namespace: c01
   labels:
-    app: cluster-subscriptions
+    app: c01-cluster-apps
   annotations:
     apps.open-cluster-management.io/git-branch: main
-    apps.open-cluster-management.io/git-path: app-of-app-cluster-subs
+    apps.open-cluster-management.io/git-path: clusters/c01
     apps.open-cluster-management.io/reconcile-option: merge
 spec:
   channel: acm-operator-policy-demo-ns/acm-operator-policy-demo

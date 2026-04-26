@@ -12,52 +12,110 @@ This demo showcases:
 
 ## Architecture
 
-### GitOps Flow
+### GitOps Flow - Layered App-of-Apps Pattern
 
 ```
-Git Repository (this repo)
-    ↓
-ACM Channel (Git source)
-    ↓
-ACM Subscription (policies/gitlab-operator path)
-    ↓
-Policy Created on Hub Cluster
-    ↓
-Placement (targets environment=qa clusters)
-    ↓
-Policy Propagated to Managed Cluster (c01)
-    ↓
-OperatorPolicy Enforced (GitLab operator installed/managed)
+┌─────────────────────────────────────────────────────────┐
+│ Git Repository (this repo)                              │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│ ACM Channel (acm-operator-policy-demo)                  │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│ Top-level Subscription (namespace: policies)            │
+│ git-path: app-of-app-cluster-subs                       │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ├─► Creates cluster subscriptions
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│ Cluster c01 Subscription (namespace: c01)               │
+│ git-path: clusters/c01                                  │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ├─► Deploys all components configured for c01:
+                     │
+                     ├─► clusters/c01/common/
+                     │   └─► Placement (environment=qa)
+                     │
+                     ├─► clusters/c01/gitlab-operator/
+                     │   ├─► components/gitlab-operator/policy.yaml
+                     │   └─► placement-binding.yaml
+                     │
+                     └─► Future: clusters/c01/gov1/, gov2/, etc.
+                     
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│ Policy Propagated to Managed Cluster (c01)              │
+│ via Placement + PlacementBinding                        │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│ OperatorPolicy Enforced                                 │
+│ GitLab operator installed/managed on cluster c01        │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Folder Structure
 
 ```
 .
-├── components/              # Base resources
-│   └── gitlab-operator/    # OperatorPolicy definition
-├── groups/                  # Kustomize components for cluster groups
-│   ├── all/                # Common to all clusters
-│   └── qa/                 # QA-specific configuration
-├── clusters/                # Cluster-specific overlays
+├── components/                  # Base policy definitions
+│   └── gitlab-operator/        # OperatorPolicy definition
+├── groups/                      # Kustomize components for cluster groups
+│   ├── all/                    # Common to all clusters
+│   └── qa/                     # QA-specific configuration
+├── clusters/                    # Cluster-specific configurations
 │   └── c01/
-│       ├── common/         # References groups
-│       └── gitlab-operator/# Builds the final policy
-├── policies/                # Placement and binding
-│   └── gitlab-operator/
-├── app-of-app-manifest/     # Bootstrap resources
-│   ├── channel/            # Git channel
-│   └── policy-deployment/  # App-of-apps subscription
-└── docs/                    # Documentation
+│       ├── common/             # Shared placement, references groups
+│       │   ├── placement.yaml
+│       │   └── kustomization.yaml
+│       └── gitlab-operator/    # Component-specific config
+│           ├── placement-binding.yaml
+│           └── kustomization.yaml (references ../../../components/gitlab-operator)
+├── app-of-app-cluster-subs/    # Cluster-level subscriptions
+│   └── c01/                    # Subscription for cluster c01
+│       ├── namespace.yaml      # Creates 'c01' namespace
+│       ├── application.yaml
+│       ├── subscription.yaml   # Points to clusters/c01
+│       └── kustomization.yaml
+├── app-of-app-manifest/         # Bootstrap resources
+│   ├── channel/                # Git channel
+│   └── policy-deployment/      # Top-level subscription (points to app-of-app-cluster-subs)
+└── docs/                        # Documentation
 ```
+
+### Architecture Layers
+
+This repository uses a 3-layer app-of-apps architecture:
+
+1. **Components Layer** (`components/`): Contains actual policy manifests
+   - Reusable policy definitions
+   - No cluster-specific configuration
+
+2. **Cluster Layer** (`clusters/c01/`): Cluster-specific configurations
+   - `common/`: Shared resources (placement)
+   - `gitlab-operator/`: References component + placement-binding
+   - Future: `gov1/`, `gov2/`, etc.
+
+3. **App-of-App Layer** (`app-of-app-cluster-subs/`): Per-cluster subscriptions
+   - Each cluster folder contains a subscription pointing to `clusters/<cluster-name>`
+   - Automatically deploys all components configured for that cluster
 
 ### Components
 
 1. **OperatorPolicy**: Defines the GitLab operator subscription spec
-2. **Placement**: Selects clusters with label `environment=qa`
-3. **PlacementBinding**: Links the policy to the placement
+2. **Placement**: Selects clusters with label `environment=qa` (in `clusters/c01/common/`)
+3. **PlacementBinding**: Links the policy to the placement (in `clusters/c01/gitlab-operator/`)
 4. **Channel**: Points to this Git repository
-5. **Subscription**: Pulls policy from the `policies/gitlab-operator` path
+5. **Top-level Subscription**: Pulls cluster subscriptions from `app-of-app-cluster-subs`
+6. **Cluster Subscription**: Pulls all components from `clusters/c01`
 
 ## Prerequisites
 
@@ -98,9 +156,9 @@ Verify the channel is created:
 oc get channel -n acm-operator-policy-demo-ns
 ```
 
-### Step 3: Deploy the Policy via GitOps
+### Step 3: Deploy via GitOps (App-of-Apps Pattern)
 
-Deploy the app-of-apps subscription that will pull the policy from Git:
+Deploy the top-level subscription that will create cluster-level subscriptions:
 
 ```bash
 oc apply -k app-of-app-manifest/policy-deployment/
@@ -108,32 +166,36 @@ oc apply -k app-of-app-manifest/policy-deployment/
 
 This creates:
 - `policies` namespace
-- Application resource
-- Subscription pointing to `policies/gitlab-operator` Git path
+- Application and Subscription pointing to `app-of-app-cluster-subs`
 - Placement targeting the hub cluster (local-cluster)
 
-### Step 4: Verify Policy Deployment
+### Step 4: Verify Cluster Subscription Deployment
 
 Wait for the subscription to sync (may take 1-2 minutes):
 
 ```bash
-# Check subscription status
+# Check top-level subscription status
 oc get subscription -n policies
 
 # Check application
 oc get application -n policies
 
+# Verify cluster c01 namespace and subscription were created
+oc get namespace c01
+oc get subscription -n c01
+oc get application -n c01
+
 # Verify policy was created
 oc get policy -n policies
 
-# Check placement
+# Check placement (in policies namespace, created from clusters/c01/common/)
 oc get placement -n policies
 
 # Verify placement binding
 oc get placementbinding -n policies
 ```
 
-Expected policy name: `gitlab-operator-policy-qa-c01`
+Expected policy name: `gitlab-operator-policy-all-qa-c01`
 
 ### Step 5: Verify Policy Propagation
 
@@ -141,10 +203,10 @@ Check that the policy is compliant on the managed cluster:
 
 ```bash
 # Check policy status
-oc get policy gitlab-operator-policy-qa-c01 -n policies
+oc get policy gitlab-operator-policy-all-qa-c01 -n policies
 
 # Get detailed compliance status
-oc describe policy gitlab-operator-policy-qa-c01 -n policies
+oc describe policy gitlab-operator-policy-all-qa-c01 -n policies
 
 # View policy decisions (which clusters matched)
 oc get placementdecision -n policies
@@ -176,7 +238,7 @@ oc get pods -n gitlab-system
 
 ```bash
 # Policy should show as compliant
-oc get policy gitlab-operator-policy-qa-c01 -n policies -o jsonpath='{.status.compliant}'
+oc get policy gitlab-operator-policy-all-qa-c01 -n policies -o jsonpath='{.status.compliant}'
 
 # Should return: Compliant
 ```
@@ -185,13 +247,14 @@ oc get policy gitlab-operator-policy-qa-c01 -n policies -o jsonpath='{.status.co
 
 1. Make a change to [`components/gitlab-operator/policy.yaml`](components/gitlab-operator/policy.yaml)
 2. Commit and push to the Git repository
-3. Wait for the subscription to sync (check with `-w` flag):
+3. Wait for the cluster subscription to sync:
    ```bash
-   oc get subscription -n policies gitlab-operator-policy-subscription -w
+   # Watch cluster c01 subscription
+   oc get subscription -n c01 -w
    ```
 4. Verify the policy was updated:
    ```bash
-   oc get policy gitlab-operator-policy-qa-c01 -n policies -o yaml
+   oc get policy gitlab-operator-policy-all-qa-c01 -n policies -o yaml
    ```
 
 ## Upgrading the Operator
@@ -224,20 +287,23 @@ git push origin main
 
 ```bash
 # Get violation details
-oc get policy gitlab-operator-policy-qa-c01 -n policies -o yaml | grep -A 20 status
+oc get policy gitlab-operator-policy-all-qa-c01 -n policies -o yaml | grep -A 20 status
 
 # Check policy events
-oc get events -n policies --field-selector involvedObject.name=gitlab-operator-policy-qa-c01
+oc get events -n policies --field-selector involvedObject.name=gitlab-operator-policy-all-qa-c01
 ```
 
 ### Subscription Not Syncing
 
 ```bash
-# Check subscription status
-oc describe subscription -n policies gitlab-operator-policy-subscription
+# Check top-level subscription (app-of-app-cluster-subs)
+oc describe subscription -n policies cluster-subscriptions
 
-# Force manual reconciliation
-oc annotate subscription gitlab-operator-policy-subscription -n policies \
+# Check cluster c01 subscription
+oc describe subscription -n c01 c01-cluster-apps
+
+# Force manual reconciliation on cluster subscription
+oc annotate subscription c01-cluster-apps -n c01 \
   apps.open-cluster-management.io/manual-refresh-time="$(date +%s)"
 ```
 
@@ -256,21 +322,70 @@ oc get operatorpolicy -A
 
 ## Customization
 
-### Adding More Clusters
+### Adding a New Component to Cluster c01
 
-1. Label additional managed clusters with `environment=qa`:
+When you want to add a new governance policy (e.g., `gov1`):
+
+1. **Create the component** with policy manifests:
    ```bash
-   oc label managedcluster c02 environment=qa
+   mkdir -p components/gov1
+   # Add your policy.yaml and kustomization.yaml
    ```
 
-2. The policy will automatically propagate to newly labeled clusters
+2. **Add to cluster c01**:
+   ```bash
+   mkdir -p clusters/c01/gov1
+   ```
+
+3. **Create cluster configuration** (`clusters/c01/gov1/kustomization.yaml`):
+   ```yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+   
+   components:
+     - ../common  # Shares the placement
+   
+   resources:
+     - ../../../components/gov1
+     - placement-binding.yaml  # Component-specific binding
+   
+   namespace: policies
+   ```
+
+4. **Create placement-binding** (`clusters/c01/gov1/placement-binding.yaml`) to bind your policy to the shared placement
+
+5. Commit and push - the cluster c01 subscription will automatically pick it up!
+
+### Adding More Clusters
+
+To add cluster c02:
+
+1. **Create cluster subscription** folder:
+   ```bash
+   mkdir -p app-of-app-cluster-subs/c02
+   ```
+
+2. **Create subscription files** (copy from c01 and modify):
+   ```bash
+   # namespace.yaml, application.yaml, subscription.yaml, kustomization.yaml
+   # Update names to c02 and git-path to clusters/c02
+   ```
+
+3. **Create cluster configuration**:
+   ```bash
+   mkdir -p clusters/c02/common
+   mkdir -p clusters/c02/gitlab-operator
+   # Add placement.yaml, placement-binding.yaml, kustomization.yaml
+   ```
+
+4. Commit and push - the top-level subscription will deploy c02!
 
 ### Creating Production Policies
 
 1. Create a new group: `groups/prod/`
-2. Create cluster-specific overlays: `clusters/c02/gitlab-operator/`
-3. Create new policy in `policies/` with production placement
-4. Reference production cluster labels in placement
+2. Create cluster-specific overlays: `clusters/prod01/`
+3. Create app-of-app subscription: `app-of-app-cluster-subs/prod01/`
+4. Reference production cluster labels in `clusters/prod01/common/placement.yaml`
 
 ### Changing Operator Configuration
 
@@ -282,31 +397,82 @@ Edit [`components/gitlab-operator/policy.yaml`](components/gitlab-operator/polic
 
 ## Kustomize Structure Explanation
 
-This repo uses kustomize layering:
+This repo uses a 3-layer kustomize architecture:
 
-- **Components Layer** (`components/`): Base OperatorPolicy definitions
-- **Groups Layer** (`groups/`): Reusable configurations (all, qa, prod)
-- **Clusters Layer** (`clusters/`): Cluster-specific customizations
-- **Policies Layer** (`policies/`): Combines everything + adds Placement
+### Layer 1: Components (`components/`)
+Base policy definitions, reusable across clusters:
+```bash
+components/gitlab-operator/
+├── policy.yaml         # OperatorPolicy definition
+└── kustomization.yaml
+```
+
+### Layer 2: Cluster Configurations (`clusters/c01/`)
+Cluster-specific configurations that reference components:
+```bash
+clusters/c01/
+├── common/
+│   ├── placement.yaml       # Shared by all components in this cluster
+│   └── kustomization.yaml   # References groups/all, groups/qa
+└── gitlab-operator/
+    ├── placement-binding.yaml   # Binds policy to placement
+    └── kustomization.yaml       # References ../common and ../../../components/gitlab-operator
+```
+
+### Layer 3: App-of-App Subscriptions (`app-of-app-cluster-subs/`)
+Per-cluster subscriptions that deploy everything for that cluster:
+```bash
+app-of-app-cluster-subs/c01/
+├── namespace.yaml      # Creates c01 namespace
+├── application.yaml    # Application wrapper
+├── subscription.yaml   # Points to clusters/c01
+└── kustomization.yaml
+```
+
+### Groups Layer (`groups/`)
+Kustomize components for reusable configurations:
+- `groups/all/`: Common to all clusters
+- `groups/qa/`: QA-specific configuration
 
 To build and preview the final manifests:
 
 ```bash
-# Preview what will be deployed
-oc kustomize policies/gitlab-operator/
+# Preview what will be deployed for cluster c01
+oc kustomize clusters/c01/gitlab-operator/
+
+# Preview cluster c01 app-of-app subscription
+oc kustomize app-of-app-cluster-subs/c01/
 
 # Validate the kustomization
-oc kustomize policies/gitlab-operator/ | oc apply --dry-run=client -f -
+oc kustomize clusters/c01/gitlab-operator/ | oc apply --dry-run=client -f -
 ```
+
+## Benefits of This Architecture
+
+### Scalability
+- **Easy to add new components**: Just create a folder under `clusters/c01/new-component/` and reference the component
+- **Easy to add new clusters**: Copy the app-of-app subscription structure and cluster configuration
+- **No changes to top-level**: The top-level subscription automatically picks up new clusters
+
+### Maintainability
+- **Separation of concerns**: Components, cluster configs, and subscriptions are isolated
+- **Shared resources**: Placement is shared via `clusters/c01/common/`, reducing duplication
+- **Consistent pattern**: All clusters follow the same structure
+
+### Flexibility
+- **Per-cluster customization**: Each cluster can have different components
+- **Per-component customization**: Each component can have cluster-specific overrides
+- **Layered composition**: Groups provide reusable configurations across clusters
 
 ## Key Features Demonstrated
 
-1. **OperatorPolicy v1beta1**: Modern operator lifecycle management
-2. **Placement v1beta1**: Modern cluster selection API
-3. **GitOps Pattern**: Infrastructure as code with Git as source of truth
-4. **Kustomize Components**: Composable configuration management
-5. **App-of-Apps Pattern**: Bootstrapping policies via ACM Subscriptions
+1. **Layered App-of-Apps Pattern**: Multi-level GitOps subscriptions for scalable deployments
+2. **OperatorPolicy v1beta1**: Modern operator lifecycle management
+3. **Placement v1beta1**: Modern cluster selection API
+4. **GitOps Pattern**: Infrastructure as code with Git as source of truth
+5. **Kustomize Components**: Composable configuration management
 6. **Multi-cluster Management**: Single policy definition, multiple clusters
+7. **Shared Resources**: Common placement across components per cluster
 
 ## Resources and References
 
