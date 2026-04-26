@@ -1,7 +1,7 @@
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
 metadata:
-  name: gitlab-operator-policy
+  name: serverless-operator-policy
   annotations:
     policy.open-cluster-management.io/standards: NIST SP 800-53
     policy.open-cluster-management.io/categories: CM Configuration Management
@@ -14,7 +14,7 @@ spec:
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
         metadata:
-          name: gitlab-operator-namespace
+          name: serverless-operator-namespace
         spec:
           remediationAction: enforce
           severity: medium
@@ -29,7 +29,7 @@ spec:
         apiVersion: policy.open-cluster-management.io/v1beta1
         kind: OperatorPolicy
         metadata:
-          name: gitlab-operator
+          name: serverless-operator
         spec:
           remediationAction: enforce
           severity: medium
@@ -50,9 +50,9 @@ spec:
             targetNamespaces:
               - openshift-serverless
           subscription:
-            name: openshift-serverless
+            name: serverless-operator
             namespace: openshift-serverless
             channel: stable
             source: redhat-operators
             sourceNamespace: openshift-marketplace
-            startingCSV: serverless-operator.v1.15.0
+            startingCSV: serverless-operator.v1.37.1
