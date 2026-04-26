@@ -9,6 +9,7 @@ metadata:
     apps.open-cluster-management.io/git-branch: main
     apps.open-cluster-management.io/git-path: clusters/c01
     apps.open-cluster-management.io/reconcile-option: merge
+    apps.open-cluster-management.io/subscription-admin: "true"
 spec:
   channel: acm-operator-policy-demo-ns/acm-operator-policy-demo
   placement:
