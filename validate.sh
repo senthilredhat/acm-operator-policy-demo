@@ -38,6 +38,10 @@ echo "Layer 2: Cluster Configurations"
 validate_build "clusters/c01/gitlab-operator" "clusters/c01/gitlab-operator"
 echo ""
 
+echo "Layer 2b: Cluster Root (CRITICAL)"
+validate_build "clusters/c01" "clusters/c01 (subscription target)"
+echo ""
+
 echo "Layer 3: Cluster Subscriptions"
 validate_build "app-of-app-cluster-subs/c01" "app-of-app-cluster-subs/c01"
 echo ""

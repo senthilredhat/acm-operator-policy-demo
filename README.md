@@ -73,6 +73,7 @@ This demo showcases:
 │   └── qa/                     # QA-specific configuration
 ├── clusters/                    # Cluster-specific configurations
 │   └── c01/
+│       ├── kustomization.yaml  # CRITICAL: Lists all components to deploy for c01
 │       ├── common/             # Shared placement, references groups
 │       │   ├── placement.yaml
 │       │   └── kustomization.yaml
@@ -353,7 +354,17 @@ When you want to add a new governance policy (e.g., `gov1`):
 
 4. **Create placement-binding** (`clusters/c01/gov1/placement-binding.yaml`) to bind your policy to the shared placement
 
-5. Commit and push - the cluster c01 subscription will automatically pick it up!
+5. **Update `clusters/c01/kustomization.yaml`** to include the new component:
+   ```yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+   
+   resources:
+     - gitlab-operator
+     - gov1  # Add new component here
+   ```
+
+6. Commit and push - the cluster c01 subscription will automatically pick it up!
 
 ### Adding More Clusters
 
@@ -410,6 +421,7 @@ components/gitlab-operator/
 Cluster-specific configurations that reference components:
 ```bash
 clusters/c01/
+├── kustomization.yaml       # CRITICAL: Lists components to deploy (gitlab-operator, future: gov1, etc.)
 ├── common/
 │   ├── placement.yaml       # Shared by all components in this cluster
 │   └── kustomization.yaml   # References groups/all, groups/qa
@@ -417,6 +429,8 @@ clusters/c01/
     ├── placement-binding.yaml   # Binds policy to placement
     └── kustomization.yaml       # References ../common and ../../../components/gitlab-operator
 ```
+
+**Important**: The `clusters/c01/kustomization.yaml` is the entry point for the cluster subscription. It lists all component folders to deploy.
 
 ### Layer 3: App-of-App Subscriptions (`app-of-app-cluster-subs/`)
 Per-cluster subscriptions that deploy everything for that cluster:
