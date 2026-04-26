@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - clusterrolebinding.yaml
   - managedclustersetbinding.yaml
   - application.yaml
   - subscription.yaml
