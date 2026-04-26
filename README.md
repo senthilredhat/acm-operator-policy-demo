@@ -81,6 +81,7 @@ This demo showcases:
 │           ├── placement-binding.yaml
 │           └── kustomization.yaml (references ../../../components/gitlab-operator)
 ├── app-of-app-cluster-subs/    # Cluster-level subscriptions
+│   ├── kustomization.yaml      # CRITICAL: Lists all cluster subscriptions (c01, future: c02, etc.)
 │   └── c01/                    # Subscription for cluster c01
 │       ├── namespace.yaml      # Creates 'c01' namespace
 │       ├── application.yaml
@@ -381,14 +382,26 @@ To add cluster c02:
    # Update names to c02 and git-path to clusters/c02
    ```
 
-3. **Create cluster configuration**:
+3. **Update `app-of-app-cluster-subs/kustomization.yaml`** to include c02:
+   ```yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+   
+   resources:
+     - c01
+     - c02  # Add new cluster here
+   ```
+
+4. **Create cluster configuration**:
    ```bash
+   mkdir -p clusters/c02
+   # Create clusters/c02/kustomization.yaml listing components
    mkdir -p clusters/c02/common
    mkdir -p clusters/c02/gitlab-operator
    # Add placement.yaml, placement-binding.yaml, kustomization.yaml
    ```
 
-4. Commit and push - the top-level subscription will deploy c02!
+5. Commit and push - the top-level subscription will deploy c02!
 
 ### Creating Production Policies
 
@@ -435,12 +448,16 @@ clusters/c01/
 ### Layer 3: App-of-App Subscriptions (`app-of-app-cluster-subs/`)
 Per-cluster subscriptions that deploy everything for that cluster:
 ```bash
-app-of-app-cluster-subs/c01/
-├── namespace.yaml      # Creates c01 namespace
-├── application.yaml    # Application wrapper
-├── subscription.yaml   # Points to clusters/c01
-└── kustomization.yaml
+app-of-app-cluster-subs/
+├── kustomization.yaml  # CRITICAL: Lists all clusters (c01, future: c02, etc.)
+└── c01/
+    ├── namespace.yaml      # Creates c01 namespace
+    ├── application.yaml    # Application wrapper
+    ├── subscription.yaml   # Points to clusters/c01
+    └── kustomization.yaml
 ```
+
+**Important**: The `app-of-app-cluster-subs/kustomization.yaml` is the entry point for the top-level subscription. It lists all cluster subscription folders.
 
 ### Bootstrap Layer (`app-of-app-manifest/`)
 One-shot initialization of the entire GitOps system:
@@ -480,8 +497,21 @@ oc kustomize clusters/c01/gitlab-operator/ | oc apply --dry-run=client -f -
 This script validates:
 - All kustomize builds complete successfully
 - Subscription git-paths point to correct directories
+- **All subscription targets have kustomization.yaml files** (CRITICAL)
 - PlacementBinding correctly references the Placement
 - Resource naming consistency across layers
+
+### Critical Files - Subscription Targets
+
+These files MUST exist because subscriptions point to their directories:
+
+1. **`app-of-app-cluster-subs/kustomization.yaml`**
+   - Target of: Top-level subscription (`git-path: app-of-app-cluster-subs`)
+   - Lists: All cluster subscription folders (c01, c02, etc.)
+
+2. **`clusters/c01/kustomization.yaml`**
+   - Target of: Cluster c01 subscription (`git-path: clusters/c01`)
+   - Lists: All components to deploy for c01 (gitlab-operator, gov1, etc.)
 
 ## Benefits of This Architecture
 

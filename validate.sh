@@ -38,12 +38,16 @@ echo "Layer 2: Cluster Configurations"
 validate_build "clusters/c01/gitlab-operator" "clusters/c01/gitlab-operator"
 echo ""
 
-echo "Layer 2b: Cluster Root (CRITICAL)"
+echo "Layer 2b: Cluster Root (CRITICAL - subscription target)"
 validate_build "clusters/c01" "clusters/c01 (subscription target)"
 echo ""
 
 echo "Layer 3: Cluster Subscriptions"
 validate_build "app-of-app-cluster-subs/c01" "app-of-app-cluster-subs/c01"
+echo ""
+
+echo "Layer 3b: Cluster Subscriptions Root (CRITICAL - subscription target)"
+validate_build "app-of-app-cluster-subs" "app-of-app-cluster-subs (subscription target)"
 echo ""
 
 echo "Layer 4: Bootstrap"
@@ -94,6 +98,36 @@ else
     echo "  ✗ Mismatch detected!"
     FAILED=1
 fi
+echo ""
+
+# Verify all subscription targets have kustomization.yaml
+echo "========================================="
+echo "Subscription Target Verification"
+echo "========================================="
+echo ""
+echo "Verifying all git-path targets have kustomization.yaml..."
+echo ""
+
+# Check subscription 1
+GITPATH1=$(grep "git-path:" app-of-app-manifest/initialize-acm-gitops/subscription.yaml | awk '{print $2}')
+echo -n "  $GITPATH1/kustomization.yaml... "
+if [ -f "$GITPATH1/kustomization.yaml" ]; then
+    echo "✓"
+else
+    echo "✗ MISSING"
+    FAILED=1
+fi
+
+# Check subscription 2
+GITPATH2=$(grep "git-path:" app-of-app-cluster-subs/c01/subscription.yaml | awk '{print $2}')
+echo -n "  $GITPATH2/kustomization.yaml... "
+if [ -f "$GITPATH2/kustomization.yaml" ]; then
+    echo "✓"
+else
+    echo "✗ MISSING"
+    FAILED=1
+fi
+
 echo ""
 
 # Final result
