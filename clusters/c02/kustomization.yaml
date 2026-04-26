@@ -6,6 +6,5 @@ components:
 
 resources:
   - namespace.yaml
-  - managedclustersetbinding.yaml
   - gitlab-operator
   - serverless-operator
