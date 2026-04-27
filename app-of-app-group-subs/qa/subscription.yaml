@@ -1,0 +1,18 @@
+apiVersion: apps.open-cluster-management.io/v1
+kind: Subscription
+metadata:
+  name: gitlab-qa-group-apps
+  namespace: gitlab-qa
+  labels:
+    app: gitlab-qa-group-apps
+  annotations:
+    apps.open-cluster-management.io/git-branch: main
+    apps.open-cluster-management.io/git-path: groups/qa
+    apps.open-cluster-management.io/reconcile-option: merge
+    apps.open-cluster-management.io/subscription-admin: "true"
+spec:
+  channel: acm-operator-policy-demo-ns/acm-operator-policy-demo
+  placement:
+    placementRef:
+      kind: Placement
+      name: hub-cluster-placement

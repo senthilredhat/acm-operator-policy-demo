@@ -1,0 +1,16 @@
+# DEPRECATED: This file demonstrates the old per-cluster PlacementBinding model.
+# GitLab operator binding is now handled by groups/qa/placement-binding.yaml,
+# groups/wave1/placement-binding.yaml, etc.
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: gitlab-operator-placement-binding
+  namespace: c01-policies
+placementRef:
+  name: gitlab-operator-placement-all-qa-c01
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+subjects:
+  - name: gitlab-operator-policy-all-qa-c01
+    apiGroup: policy.open-cluster-management.io
+    kind: Policy
