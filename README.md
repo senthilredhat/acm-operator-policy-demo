@@ -45,7 +45,8 @@ groups/qa/
   │
   ▼
 All ManagedClusters whose labels match
-  └── GitLab operator installed via OperatorPolicy enforcement
+  └── GitLab and Serverless operators installed via OperatorPolicy enforcement (QA)
+      GitLab operator only (wave1, wave2, prod)
 ```
 
 ### Folder Structure
