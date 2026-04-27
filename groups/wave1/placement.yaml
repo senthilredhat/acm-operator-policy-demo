@@ -9,4 +9,3 @@ spec:
         labelSelector:
           matchLabels:
             operator-upgrade-wave: wave1
-            operators-ready: "true"
