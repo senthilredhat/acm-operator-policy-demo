@@ -8,3 +8,5 @@ resources:
   - application.yaml
   - subscription.yaml
   - placement.yaml
+  - group-application.yaml
+  - group-subscription.yaml

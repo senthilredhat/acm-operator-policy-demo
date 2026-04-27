@@ -1,11 +1,11 @@
 apiVersion: cluster.open-cluster-management.io/v1beta1
 kind: Placement
 metadata:
-  name: serverless-operator-placement
-  namespace: c02-policies
+  name: hub-cluster-placement
+  namespace: gitlab-prod
 spec:
   predicates:
     - requiredClusterSelector:
         labelSelector:
           matchLabels:
-            name: c02
+            local-cluster: "true"

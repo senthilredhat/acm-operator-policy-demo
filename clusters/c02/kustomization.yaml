@@ -6,5 +6,4 @@ components:
 
 resources:
   - namespace.yaml
-  - gitlab-operator
   - serverless-operator

@@ -1,0 +1,18 @@
+apiVersion: app.k8s.io/v1beta1
+kind: Application
+metadata:
+  name: gitlab-wave2-group-apps
+  namespace: gitlab-wave2
+  labels:
+    app: gitlab-wave2-group-apps
+spec:
+  componentKinds:
+    - group: apps.open-cluster-management.io
+      kind: Subscription
+  descriptor: {}
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - gitlab-wave2-group-apps

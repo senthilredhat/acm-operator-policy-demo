@@ -1,581 +1,349 @@
-# ACM OperatorPolicy Demo
+# ACM OperatorPolicy Demo — Label-Based Group Placement
 
-This repository demonstrates how to use Red Hat Advanced Cluster Management (ACM) OperatorPolicy to manage the lifecycle of the GitLab operator across multiple OpenShift clusters using a GitOps approach.
+This repository demonstrates how to use Red Hat Advanced Cluster Management (ACM)
+OperatorPolicy to manage the lifecycle of the GitLab operator across multiple
+OpenShift clusters using a **label-based group placement** GitOps model.
 
-## Overview
+## Core Concepts
 
-This demo showcases:
-- **OperatorPolicy**: Managing operator installation and upgrades declaratively
-- **ACM Policies**: Enforcing operator configurations across clusters
-- **GitOps Pattern**: Using ACM Application/Subscription to pull configurations from Git
-- **Kustomize Layers**: Organizing configurations with components, groups, and cluster-specific overlays
+| Object | Role |
+|---|---|
+| **Policy** | _What_ to install (the GitLab OperatorPolicy) |
+| **Placement** | _Where_ to install it (which clusters match a label selector) |
+| **PlacementBinding** | _Connects_ a Policy to a Placement |
+| **Labels** | _Control_ which clusters fall into each rollout group |
+
+A single group Placement can select **many** managed clusters by label. For
+example, all clusters with `environment=qa` and `operators-ready=true` receive
+the GitLab OperatorPolicy — no per-cluster duplication is required.
 
 ## Architecture
 
-### GitOps Flow - Layered App-of-Apps Pattern
+### GitOps Flow
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Git Repository (this repo)                              │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│ ACM Channel (acm-operator-policy-demo)                  │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│ Top-level Subscription (namespace: policies)            │
-│ git-path: app-of-app-cluster-subs                       │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ├─► Creates cluster subscriptions
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│ Cluster c01 Subscription (namespace: c01)               │
-│ git-path: clusters/c01                                  │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ├─► Deploys all components configured for c01:
-                     │
-                     ├─► clusters/c01/common/
-                     │   └─► Placement (environment=qa)
-                     │
-                     ├─► clusters/c01/gitlab-operator/
-                     │   ├─► components/gitlab-operator/policy.yaml
-                     │   └─► placement-binding.yaml
-                     │
-                     └─► Future: clusters/c01/gov1/, gov2/, etc.
-                     
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│ Policy Propagated to Managed Cluster (c01)              │
-│ via Placement + PlacementBinding                        │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│ OperatorPolicy Enforced                                 │
-│ GitLab operator installed/managed on cluster c01        │
-└─────────────────────────────────────────────────────────┘
+Git Repository
+  │
+  ▼
+ACM Channel (acm-operator-policy-demo)
+  │
+  ▼
+Bootstrap (oc apply -k app-of-app-manifest/)
+  ├── Top-level subscription → app-of-app-group-subs    (GitLab operator groups)
+  └── Cluster subscription  → app-of-app-cluster-subs  (serverless-operator, legacy)
+  │
+  ▼
+Group subscriptions (qa / wave1 / wave2 / prod)
+  │  Each subscription syncs one groups/<name>/ folder to the hub
+  ▼
+groups/qa/
+  ├── policy-gitlab-operator     (from components/gitlab-operator)
+  ├── placement-gitlab-operator-qa  (matchLabels: environment=qa, operators-ready=true)
+  └── binding-gitlab-operator-qa
+  │
+  ▼
+All ManagedClusters whose labels match
+  └── GitLab operator installed via OperatorPolicy enforcement
 ```
 
 ### Folder Structure
 
 ```
 .
-├── components/                  # Base policy definitions
-│   └── gitlab-operator/        # OperatorPolicy definition
-├── groups/                      # Kustomize components for cluster groups
-│   ├── all/                    # Common to all clusters
-│   └── qa/                     # QA-specific configuration
-├── clusters/                    # Cluster-specific configurations
-│   └── c01/
-│       ├── kustomization.yaml  # CRITICAL: Lists all components to deploy for c01
-│       ├── common/             # Shared placement, references groups
-│       │   ├── placement.yaml
-│       │   └── kustomization.yaml
-│       └── gitlab-operator/    # Component-specific config
-│           ├── placement-binding.yaml
-│           └── kustomization.yaml (references ../../../components/gitlab-operator)
-├── app-of-app-cluster-subs/    # Cluster-level subscriptions
-│   ├── kustomization.yaml      # CRITICAL: Lists all cluster subscriptions (c01, future: c02, etc.)
-│   └── c01/                    # Subscription for cluster c01
-│       ├── namespace.yaml      # Creates 'c01' namespace
-│       ├── application.yaml
-│       ├── subscription.yaml   # Points to clusters/c01
+├── components/
+│   └── gitlab-operator/         # Reusable Policy definition only
+│       ├── policy.yaml
 │       └── kustomization.yaml
-├── app-of-app-manifest/         # Bootstrap - one-shot initialization
-│   ├── kustomization.yaml      # Deploys channel + initialize-acm-gitops
-│   ├── channel/                # Git channel definition
-│   └── initialize-acm-gitops/  # Top-level subscription (points to app-of-app-cluster-subs)
-└── docs/                        # Documentation
+│
+├── groups/                       # Label-based rollout groups
+│   ├── qa/
+│   │   ├── placement.yaml        # selector: environment=qa, operators-ready=true
+│   │   ├── placement-binding.yaml
+│   │   └── kustomization.yaml
+│   ├── wave1/
+│   │   ├── placement.yaml        # selector: operator-upgrade-wave=wave1, operators-ready=true
+│   │   ├── placement-binding.yaml
+│   │   └── kustomization.yaml
+│   ├── wave2/
+│   │   └── ...
+│   └── prod/
+│       └── ...
+│
+├── app-of-app-group-subs/        # Group-level ACM subscriptions (PRIMARY)
+│   ├── kustomization.yaml        # CRITICAL: lists qa, wave1, wave2, prod
+│   ├── qa/                       # Subscription that deploys groups/qa
+│   ├── wave1/
+│   ├── wave2/
+│   └── prod/
+│
+├── app-of-app-cluster-subs/      # Cluster-level subscriptions (serverless-operator)
+│   ├── kustomization.yaml
+│   ├── c01/
+│   └── c02/
+│
+├── clusters/                     # Cluster-specific configs (serverless-operator only)
+│   ├── c01/
+│   └── c02/
+│
+├── app-of-app-manifest/          # Bootstrap — one-shot initialization
+│   ├── channel/
+│   └── initialize-acm-gitops/
+│
+└── docs/
+    ├── operator-upgrade-guide.md
+    └── legacy-cluster-specific-placement/  # Archived per-cluster files (reference only)
 ```
 
-### Architecture Layers
+## Label Model
 
-This repository uses a 3-layer app-of-apps architecture:
+### QA environments
 
-1. **Components Layer** (`components/`): Contains actual policy manifests
-   - Reusable policy definitions
-   - No cluster-specific configuration
+```yaml
+matchLabels:
+  environment: qa
+  operators-ready: "true"
+```
 
-2. **Cluster Layer** (`clusters/c01/`): Cluster-specific configurations
-   - `common/`: Shared resources (placement)
-   - `gitlab-operator/`: References component + placement-binding
-   - Future: `gov1/`, `gov2/`, etc.
+### Upgrade waves
 
-3. **App-of-App Layer** (`app-of-app-cluster-subs/`): Per-cluster subscriptions
-   - Each cluster folder contains a subscription pointing to `clusters/<cluster-name>`
-   - Automatically deploys all components configured for that cluster
+```yaml
+# wave1
+matchLabels:
+  operator-upgrade-wave: wave1
+  operators-ready: "true"
 
-### Components
+# wave2
+matchLabels:
+  operator-upgrade-wave: wave2
+  operators-ready: "true"
 
-1. **OperatorPolicy**: Defines the GitLab operator subscription spec
-2. **Placement**: Selects clusters with label `environment=qa` (in `clusters/c01/common/`)
-3. **PlacementBinding**: Links the policy to the placement (in `clusters/c01/gitlab-operator/`)
-4. **Channel**: Points to this Git repository
-5. **Top-level Subscription**: Pulls cluster subscriptions from `app-of-app-cluster-subs`
-6. **Cluster Subscription**: Pulls all components from `clusters/c01`
+# prod
+matchLabels:
+  operator-upgrade-wave: prod
+  operators-ready: "true"
+```
+
+The `operators-ready: "true"` label acts as a readiness gate — remove it from
+a cluster to pause rollout without changing any policy or placement objects.
+
+## Object Names (hub `policies` namespace)
+
+| Group | Placement | PlacementBinding | Policy |
+|---|---|---|---|
+| qa | `placement-gitlab-operator-qa` | `binding-gitlab-operator-qa` | `policy-gitlab-operator` |
+| wave1 | `placement-gitlab-operator-wave1` | `binding-gitlab-operator-wave1` | `policy-gitlab-operator` |
+| wave2 | `placement-gitlab-operator-wave2` | `binding-gitlab-operator-wave2` | `policy-gitlab-operator` |
+| prod | `placement-gitlab-operator-prod` | `binding-gitlab-operator-prod` | `policy-gitlab-operator` |
+
+The same `policy-gitlab-operator` is shared; each group binds it through its
+own unique Placement.
 
 ## Prerequisites
 
-- Red Hat Advanced Cluster Management 2.11+ installed on hub cluster
-- Hub cluster (`mocp`) with ACM operator
-- At least one managed cluster (`c01`) with label `environment=qa`
-- `oc` CLI configured and logged into the hub cluster
-- Git repository access
+- Red Hat Advanced Cluster Management 2.11+ on the hub cluster
+- `kubectl` or `oc` CLI configured against the hub
+- Managed clusters labelled appropriately (see label model above)
 
-## Setup Instructions
+## Setup
 
-### Step 1: Verify Cluster Setup
-
-Ensure your managed cluster has the correct label:
-
-```bash
-# List managed clusters
-oc get managedclusters
-
-# Verify c01 has environment=qa label
-oc get managedcluster c01 --show-labels
-
-# Add label if missing
-oc label managedcluster c01 environment=qa
-```
-
-### Step 2: Initialize ACM GitOps (One-Shot Bootstrap)
-
-Deploy all bootstrap resources in one command:
+### Step 1: Bootstrap ACM GitOps (one-shot)
 
 ```bash
 oc apply -k app-of-app-manifest/
 ```
 
 This creates:
-- `acm-operator-policy-demo-ns` namespace and Git channel
-- `policies` namespace
-- **ManagedClusterSetBinding** to bind the `global` clusterset to the `policies` namespace
-- Application and Subscription pointing to `app-of-app-cluster-subs`
-- Placement targeting the hub cluster (local-cluster)
+- `acm-operator-policy-demo-ns` namespace and Git Channel
+- `policies` namespace with **ManagedClusterSetBinding** for the `global` cluster set
+- ClusterRoleBinding granting subscription-admin privileges
+- Top-level subscription (`cluster-subscriptions`) → `app-of-app-cluster-subs`
+- Group subscription (`group-subscriptions`) → `app-of-app-group-subs`
 
-Verify the resources were created:
+Verify:
 
 ```bash
-# Verify channel
 oc get channel -n acm-operator-policy-demo-ns
-
-# Verify top-level subscription
 oc get subscription -n policies
-oc get application -n policies
-```
-
-### Step 3: Verify Cluster Subscription Deployment
-
-Wait for the subscription to sync (may take 1-2 minutes):
-
-```bash
-# Check top-level subscription status
-oc get subscription -n policies
-
-# Check application
-oc get application -n policies
-
-# Verify cluster c01 namespace and subscription were created
-oc get namespace c01
-oc get subscription -n c01
-oc get application -n c01
-
-# Verify policy was created
-oc get policy -n policies
-
-# Check placement (in policies namespace, created from clusters/c01/common/)
-oc get placement -n policies
-
-# Verify placement binding
-oc get placementbinding -n policies
-```
-
-Expected policy name: `gitlab-operator-policy-all-qa-c01`
-
-### Step 4: Verify Policy Propagation
-
-Check that the policy is compliant on the managed cluster:
-
-```bash
-# Check policy status
-oc get policy gitlab-operator-policy-all-qa-c01 -n policies
-
-# Get detailed compliance status
-oc describe policy gitlab-operator-policy-all-qa-c01 -n policies
-
-# View policy decisions (which clusters matched)
-oc get placementdecision -n policies
-```
-
-### Step 5: Verify Operator Installation on Managed Cluster (c01)
-
-The OperatorPolicy will install the GitLab operator on cluster c01:
-
-```bash
-# Switch context to c01 or use ACM to check:
-
-# Verify subscription created
-oc get subscription -n gitlab-system
-
-# Check ClusterServiceVersion (CSV)
-oc get csv -n gitlab-system
-
-# Verify operator is installed
-oc get operators
-
-# Check operator pods
-oc get pods -n gitlab-system
-```
-
-## Validating the Setup
-
-### Test Policy Compliance
-
-```bash
-# Policy should show as compliant
-oc get policy gitlab-operator-policy-all-qa-c01 -n policies -o jsonpath='{.status.compliant}'
-
-# Should return: Compliant
-```
-
-### Test GitOps Synchronization
-
-1. Make a change to [`components/gitlab-operator/policy.yaml`](components/gitlab-operator/policy.yaml)
-2. Commit and push to the Git repository
-3. Wait for the cluster subscription to sync:
-   ```bash
-   # Watch cluster c01 subscription
-   oc get subscription -n c01 -w
-   ```
-4. Verify the policy was updated:
-   ```bash
-   oc get policy gitlab-operator-policy-all-qa-c01 -n policies -o yaml
-   ```
-
-## Upgrading the Operator
-
-See the [Operator Upgrade Guide](docs/operator-upgrade-guide.md) for detailed instructions on:
-- Automatic upgrades
-- Pinning to specific versions
-- Monitoring upgrade status
-- Rollback procedures
-
-Quick example:
-
-```bash
-# Edit the policy to pin to a specific version
-vi components/gitlab-operator/policy.yaml
-
-# Add startingCSV field:
-# subscription:
-#   startingCSV: gitlab-operator-kubernetes.v1.2.3
-
-# Commit and push
-git add components/gitlab-operator/policy.yaml
-git commit -m "Pin GitLab operator to v1.2.3"
-git push origin main
-```
-
-## Troubleshooting
-
-### Placement Not Selecting Clusters
-
-If the placement shows `SUCCEEDED = False` with reason `NoManagedClusterSetBindings`:
-
-```bash
-# Check placement status
-oc get placement hub-cluster-placement -n policies
-
-# Verify ManagedClusterSetBinding exists
 oc get managedclustersetbinding -n policies
 ```
 
-**Solution**: The `global` ManagedClusterSetBinding should be created automatically by the bootstrap. If missing, verify:
-- The managedclustersetbinding.yaml file exists in `app-of-app-manifest/initialize-acm-gitops/`
-- The file is listed in the kustomization.yaml resources
-- The Git repository has been synced
-
-### No Cluster Subscription Created
-
-If no subscription appears in the `c01` namespace:
+### Step 2: Label managed clusters
 
 ```bash
-# Check if top-level subscription is working
-oc get subscription cluster-subscriptions -n policies
+# QA clusters
+oc label managedcluster c01 environment=qa operators-ready=true --overwrite
+oc label managedcluster c02 environment=qa operators-ready=true --overwrite
 
-# Check placement decisions
+# Wave-based clusters (when ready for upgrade rollout)
+oc label managedcluster c03 operator-upgrade-wave=wave1 operators-ready=true --overwrite
+oc label managedcluster c04 operator-upgrade-wave=wave2 operators-ready=true --overwrite
+oc label managedcluster c05 operator-upgrade-wave=prod  operators-ready=true --overwrite
+```
+
+### Step 3: Verify Placement decisions
+
+```bash
+oc get placement -n policies
+oc describe placement placement-gitlab-operator-qa -n policies
 oc get placementdecision -n policies
-
-# If no decisions, check the placement
-oc describe placement hub-cluster-placement -n policies
 ```
 
-The placement must successfully select local-cluster before resources are deployed.
+Expected: `placement-gitlab-operator-qa` selects both c01 and c02 because both
+carry `environment=qa` — one placement, multiple clusters, no duplication.
 
-### Policy Shows Non-Compliant
+### Step 4: Verify Policy propagation
 
 ```bash
-# Get violation details
-oc get policy gitlab-operator-policy-all-qa-c01 -n policies -o yaml | grep -A 20 status
+oc get policy -n policies
+oc describe policy policy-gitlab-operator -n policies
 
-# Check policy events
-oc get events -n policies --field-selector involvedObject.name=gitlab-operator-policy-all-qa-c01
+# Compliance status
+oc get policy policy-gitlab-operator -n policies -o jsonpath='{.status.compliant}'
 ```
 
-### Subscription Not Syncing
+### Step 5: Verify operator installation on a managed cluster
 
 ```bash
-# Check top-level subscription (app-of-app-cluster-subs)
-oc describe subscription -n policies cluster-subscriptions
-
-# Check cluster c01 subscription
-oc describe subscription -n c01 c01-cluster-apps
-
-# Force manual reconciliation on cluster subscription
-oc annotate subscription c01-cluster-apps -n c01 \
-  apps.open-cluster-management.io/manual-refresh-time="$(date +%s)"
+# On the managed cluster (or via ACM console):
+oc get subscription -n gitlab-system
+oc get csv -n gitlab-system
+oc get pods -n gitlab-system
 ```
 
-### Operator Not Installing on Managed Cluster
-
-```bash
-# Check policy propagation
-oc get policy -A | grep gitlab-operator
-
-# On managed cluster, check for policy
-oc get policy -n c01
-
-# Check OperatorPolicy status
-oc get operatorpolicy -A
-```
-
-## Customization
-
-### Adding a New Component to Cluster c01
-
-When you want to add a new governance policy (e.g., `gov1`):
-
-1. **Create the component** with policy manifests:
-   ```bash
-   mkdir -p components/gov1
-   # Add your policy.yaml and kustomization.yaml
-   ```
-
-2. **Add to cluster c01**:
-   ```bash
-   mkdir -p clusters/c01/gov1
-   ```
-
-3. **Create cluster configuration** (`clusters/c01/gov1/kustomization.yaml`):
-   ```yaml
-   apiVersion: kustomize.config.k8s.io/v1beta1
-   kind: Kustomization
-   
-   components:
-     - ../common  # Shares the placement
-   
-   resources:
-     - ../../../components/gov1
-     - placement-binding.yaml  # Component-specific binding
-   
-   namespace: policies
-   ```
-
-4. **Create placement-binding** (`clusters/c01/gov1/placement-binding.yaml`) to bind your policy to the shared placement
-
-5. **Update `clusters/c01/kustomization.yaml`** to include the new component:
-   ```yaml
-   apiVersion: kustomize.config.k8s.io/v1beta1
-   kind: Kustomization
-   
-   resources:
-     - gitlab-operator
-     - gov1  # Add new component here
-   ```
-
-6. Commit and push - the cluster c01 subscription will automatically pick it up!
-
-### Adding More Clusters
-
-To add cluster c02:
-
-1. **Create cluster subscription** folder:
-   ```bash
-   mkdir -p app-of-app-cluster-subs/c02
-   ```
-
-2. **Create subscription files** (copy from c01 and modify):
-   ```bash
-   # namespace.yaml, application.yaml, subscription.yaml, kustomization.yaml
-   # Update names to c02 and git-path to clusters/c02
-   ```
-
-3. **Update `app-of-app-cluster-subs/kustomization.yaml`** to include c02:
-   ```yaml
-   apiVersion: kustomize.config.k8s.io/v1beta1
-   kind: Kustomization
-   
-   resources:
-     - c01
-     - c02  # Add new cluster here
-   ```
-
-4. **Create cluster configuration**:
-   ```bash
-   mkdir -p clusters/c02
-   # Create clusters/c02/kustomization.yaml listing components
-   mkdir -p clusters/c02/common
-   mkdir -p clusters/c02/gitlab-operator
-   # Add placement.yaml, placement-binding.yaml, kustomization.yaml
-   ```
-
-5. Commit and push - the top-level subscription will deploy c02!
-
-### Creating Production Policies
-
-1. Create a new group: `groups/prod/`
-2. Create cluster-specific overlays: `clusters/prod01/`
-3. Create app-of-app subscription: `app-of-app-cluster-subs/prod01/`
-4. Reference production cluster labels in `clusters/prod01/common/placement.yaml`
-
-### Changing Operator Configuration
-
-Edit [`components/gitlab-operator/policy.yaml`](components/gitlab-operator/policy.yaml) to modify:
-- Operator channel (stable, fast, etc.)
-- Installation namespace
-- Operator source catalog
-- Version pinning
-
-## Kustomize Structure Explanation
-
-This repo uses a 3-layer kustomize architecture:
-
-### Layer 1: Components (`components/`)
-Base policy definitions, reusable across clusters:
-```bash
-components/gitlab-operator/
-├── policy.yaml         # OperatorPolicy definition
-└── kustomization.yaml
-```
-
-### Layer 2: Cluster Configurations (`clusters/c01/`)
-Cluster-specific configurations that reference components:
-```bash
-clusters/c01/
-├── kustomization.yaml       # CRITICAL: Lists components to deploy (gitlab-operator, future: gov1, etc.)
-├── common/
-│   ├── placement.yaml       # Shared by all components in this cluster
-│   └── kustomization.yaml   # References groups/all, groups/qa
-└── gitlab-operator/
-    ├── placement-binding.yaml   # Binds policy to placement
-    └── kustomization.yaml       # References ../common and ../../../components/gitlab-operator
-```
-
-**Important**: The `clusters/c01/kustomization.yaml` is the entry point for the cluster subscription. It lists all component folders to deploy.
-
-### Layer 3: App-of-App Subscriptions (`app-of-app-cluster-subs/`)
-Per-cluster subscriptions that deploy everything for that cluster:
-```bash
-app-of-app-cluster-subs/
-├── kustomization.yaml  # CRITICAL: Lists all clusters (c01, future: c02, etc.)
-└── c01/
-    ├── namespace.yaml      # Creates c01 namespace
-    ├── application.yaml    # Application wrapper
-    ├── subscription.yaml   # Points to clusters/c01
-    └── kustomization.yaml
-```
-
-**Important**: The `app-of-app-cluster-subs/kustomization.yaml` is the entry point for the top-level subscription. It lists all cluster subscription folders.
-
-### Bootstrap Layer (`app-of-app-manifest/`)
-One-shot initialization of the entire GitOps system:
-```bash
-app-of-app-manifest/
-├── kustomization.yaml          # Single entry point - deploys everything below
-├── channel/                    # Git channel pointing to this repo
-└── initialize-acm-gitops/      # Top-level subscription pointing to app-of-app-cluster-subs
-```
-
-### Groups Layer (`groups/`)
-Kustomize components for reusable configurations:
-- `groups/all/`: Common to all clusters
-- `groups/qa/`: QA-specific configuration
-
-To build and preview the final manifests:
-
-```bash
-# Preview what will be deployed for cluster c01
-oc kustomize clusters/c01/gitlab-operator/
-
-# Preview cluster c01 app-of-app subscription
-oc kustomize app-of-app-cluster-subs/c01/
-
-# Validate the kustomization
-oc kustomize clusters/c01/gitlab-operator/ | oc apply --dry-run=client -f -
-```
-
-## Validation Script
-
-**Important**: Run the validation script whenever you make changes to the structure:
+## Validating the Repository Structure
 
 ```bash
 ./validate.sh
 ```
 
-This script validates:
-- All kustomize builds complete successfully
-- Subscription git-paths point to correct directories
-- **All subscription targets have kustomization.yaml files** (CRITICAL)
-- PlacementBinding correctly references the Placement
-- Resource naming consistency across layers
+The script:
+- Renders each `groups/<name>` kustomization and confirms it builds
+- Verifies policy name is `policy-gitlab-operator`
+- Checks Placement names match PlacementBinding references within each group
+- Verifies group subscription git-paths are correct
+- Checks all kustomization.yaml files exist at subscription targets
 
-### Critical Files - Subscription Targets
+Preview rendered output manually:
 
-These files MUST exist because subscriptions point to their directories:
+```bash
+kubectl kustomize groups/qa
+kubectl kustomize groups/wave1
+kubectl kustomize app-of-app-group-subs
+```
 
-1. **`app-of-app-cluster-subs/kustomization.yaml`**
-   - Target of: Top-level subscription (`git-path: app-of-app-cluster-subs`)
-   - Lists: All cluster subscription folders (c01, c02, etc.)
+## Rollout Workflow
 
-2. **`clusters/c01/kustomization.yaml`**
-   - Target of: Cluster c01 subscription (`git-path: clusters/c01`)
-   - Lists: All components to deploy for c01 (gitlab-operator, gov1, etc.)
+### Initial QA validation
 
-## Benefits of This Architecture
+1. Label QA clusters with `environment=qa` and `operators-ready=true`
+2. Observe `placement-gitlab-operator-qa` decisions include all QA clusters
+3. Confirm `policy-gitlab-operator` propagates and GitLab operator installs
 
-### Scalability
-- **Easy to add new components**: Just create a folder under `clusters/c01/new-component/` and reference the component
-- **Easy to add new clusters**: Copy the app-of-app subscription structure and cluster configuration
-- **No changes to top-level**: The top-level subscription automatically picks up new clusters
+### Phased production rollout
 
-### Maintainability
-- **Separation of concerns**: Components, cluster configs, and subscriptions are isolated
-- **Shared resources**: Placement is shared via `clusters/c01/common/`, reducing duplication
-- **Consistent pattern**: All clusters follow the same structure
+```bash
+# Promote wave1 clusters
+oc label managedcluster c03 operator-upgrade-wave=wave1 operators-ready=true --overwrite
 
-### Flexibility
-- **Per-cluster customization**: Each cluster can have different components
-- **Per-component customization**: Each component can have cluster-specific overrides
-- **Layered composition**: Groups provide reusable configurations across clusters
+# After wave1 is healthy, promote wave2
+oc label managedcluster c04 operator-upgrade-wave=wave2 operators-ready=true --overwrite
 
-## Key Features Demonstrated
+# After wave2 is healthy, promote prod
+oc label managedcluster c05 operator-upgrade-wave=prod operators-ready=true --overwrite
+```
 
-1. **Layered App-of-Apps Pattern**: Multi-level GitOps subscriptions for scalable deployments
-2. **OperatorPolicy v1beta1**: Modern operator lifecycle management
-3. **Placement v1beta1**: Modern cluster selection API
-4. **GitOps Pattern**: Infrastructure as code with Git as source of truth
-5. **Kustomize Components**: Composable configuration management
-6. **Multi-cluster Management**: Single policy definition, multiple clusters
-7. **Shared Resources**: Common placement across components per cluster
+### Pause rollout for a cluster
 
-## Resources and References
+```bash
+# Remove operators-ready gate to pause without changing any policy
+oc label managedcluster c04 operators-ready- --overwrite
+```
+
+## Adding a New Group
+
+1. Create `groups/<name>/placement.yaml` with the appropriate label selector
+2. Create `groups/<name>/placement-binding.yaml` referencing `policy-gitlab-operator`
+3. Create `groups/<name>/kustomization.yaml` including `../../components/gitlab-operator`
+4. Create `app-of-app-group-subs/<name>/` with namespace, placement, subscription, application, kustomization
+5. Add `<name>` to `app-of-app-group-subs/kustomization.yaml` resources list
+6. Commit and push — ACM picks it up automatically
+
+## Adding a New Operator Component
+
+1. Create `components/<operator>/policy.yaml` and `kustomization.yaml`
+2. Add a `placement.yaml` and `placement-binding.yaml` to the appropriate group folders
+3. Update each group's `kustomization.yaml` to include the new component
+
+## Upgrading the Operator
+
+See [docs/operator-upgrade-guide.md](docs/operator-upgrade-guide.md).
+
+Quick example — pin to a specific CSV:
+
+```bash
+# Edit the component policy
+vi components/gitlab-operator/policy.yaml
+# Add under subscription:
+#   startingCSV: gitlab-operator-kubernetes.v1.2.3
+
+git add components/gitlab-operator/policy.yaml
+git commit -m "Pin GitLab operator to v1.2.3"
+git push origin main
+```
+
+The change is automatically picked up by all four group subscriptions.
+
+## Troubleshooting
+
+### Placement selects no clusters
+
+```bash
+oc get placement placement-gitlab-operator-qa -n policies -o yaml | grep -A 10 status
+oc get managedclustersetbinding -n policies
+```
+
+The `global` ManagedClusterSetBinding must exist in the `policies` namespace for
+Placements there to see managed clusters. It is created by the bootstrap.
+
+### No PlacementDecisions
+
+```bash
+oc get placementdecision -n policies -l cluster.open-cluster-management.io/placement=placement-gitlab-operator-qa
+```
+
+If empty, verify the managed cluster carries the expected labels:
+
+```bash
+oc get managedcluster c01 --show-labels
+```
+
+### Group subscription not syncing
+
+```bash
+# Top-level group subscription
+oc describe subscription group-subscriptions -n policies
+
+# Individual group subscription
+oc describe subscription gitlab-qa-group-apps -n gitlab-qa
+```
+
+### Policy non-compliant
+
+```bash
+oc get policy policy-gitlab-operator -n policies -o yaml | grep -A 20 status
+oc get events -n policies --field-selector involvedObject.name=policy-gitlab-operator
+```
+
+## Key Design Principles
+
+1. One Placement per logical rollout group, not per cluster.
+2. Cluster selection is controlled entirely by ManagedCluster labels.
+3. `components/gitlab-operator/` contains only the reusable Policy — no Placement or PlacementBinding.
+4. All hub-side governance objects live in the `policies` namespace.
+5. Object names are unique in the hub namespace — no suffixing required.
+6. The `operators-ready: "true"` label acts as a per-cluster readiness gate.
+
+## Resources
 
 - [Getting started with OperatorPolicy](https://developers.redhat.com/articles/2024/08/08/getting-started-operatorpolicy)
 - [Use OperatorPolicy to manage Kubernetes-native applications](https://developers.redhat.com/articles/2024/05/14/use-operatorpolicy-manage-kubernetes-native-applications)
@@ -584,8 +352,4 @@ These files MUST exist because subscriptions point to their directories:
 
 ## License
 
-This is a demonstration repository for educational purposes.
-
-## Contributing
-
-This is a demo repository. For issues or questions about ACM OperatorPolicy, please refer to the official Red Hat ACM documentation.
+Demonstration repository for educational purposes.

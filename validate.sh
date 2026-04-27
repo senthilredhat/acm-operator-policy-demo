@@ -1,8 +1,8 @@
-#!/bin/bash
-# Validation script for ACM GitOps structure
-# Run this script whenever you make changes to verify the structure
+#!/usr/bin/env bash
+# Validation script for ACM GitOps label-based group placement structure.
+# Run after any structural changes.
 
-set -e
+set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
@@ -12,132 +12,145 @@ echo "ACM GitOps Structure Validation"
 echo "========================================="
 echo ""
 
-# Track failures
 FAILED=0
 
-# Function to validate kustomize build
 validate_build() {
     local path=$1
     local description=$2
-
     echo -n "  Building $description... "
-    if oc kustomize "$path" > /dev/null 2>&1; then
-        echo "✓"
+    if kubectl kustomize "$path" > /dev/null 2>&1; then
+        echo "OK"
     else
-        echo "✗ FAILED"
+        echo "FAILED"
+        kubectl kustomize "$path" 2>&1 | sed 's/^/    /'
         FAILED=1
     fi
 }
 
-# Validate all layers
-echo "Layer 1: Components"
+# ---------------------------------------------------------------------------
+echo "Components"
 validate_build "components/gitlab-operator" "components/gitlab-operator"
 echo ""
 
-echo "Layer 2: Cluster Configurations"
-validate_build "clusters/c01/gitlab-operator" "clusters/c01/gitlab-operator"
+# ---------------------------------------------------------------------------
+echo "Groups (label-based group placements)"
+validate_build "groups/qa"    "groups/qa"
+validate_build "groups/wave1" "groups/wave1"
+validate_build "groups/wave2" "groups/wave2"
+validate_build "groups/prod"  "groups/prod"
 echo ""
 
-echo "Layer 2b: Cluster Root (CRITICAL - subscription target)"
-validate_build "clusters/c01" "clusters/c01 (subscription target)"
+# ---------------------------------------------------------------------------
+echo "Group Subscriptions"
+validate_build "app-of-app-group-subs/qa"    "app-of-app-group-subs/qa"
+validate_build "app-of-app-group-subs/wave1" "app-of-app-group-subs/wave1"
+validate_build "app-of-app-group-subs/wave2" "app-of-app-group-subs/wave2"
+validate_build "app-of-app-group-subs/prod"  "app-of-app-group-subs/prod"
+validate_build "app-of-app-group-subs"       "app-of-app-group-subs (subscription target)"
 echo ""
 
-echo "Layer 3: Cluster Subscriptions"
+# ---------------------------------------------------------------------------
+echo "Cluster Subscriptions (serverless-operator, legacy pattern)"
 validate_build "app-of-app-cluster-subs/c01" "app-of-app-cluster-subs/c01"
+validate_build "app-of-app-cluster-subs/c02" "app-of-app-cluster-subs/c02"
+validate_build "app-of-app-cluster-subs"     "app-of-app-cluster-subs (subscription target)"
 echo ""
 
-echo "Layer 3b: Cluster Subscriptions Root (CRITICAL - subscription target)"
-validate_build "app-of-app-cluster-subs" "app-of-app-cluster-subs (subscription target)"
-echo ""
-
-echo "Layer 4: Bootstrap"
+# ---------------------------------------------------------------------------
+echo "Bootstrap"
 validate_build "app-of-app-manifest" "app-of-app-manifest"
 echo ""
 
-# Verify subscription paths
+# ---------------------------------------------------------------------------
 echo "========================================="
-echo "Subscription Path Verification"
+echo "Policy Name Verification"
 echo "========================================="
 echo ""
 
-TOP_LEVEL_PATH=$(oc kustomize app-of-app-manifest/initialize-acm-gitops/ | grep "apps.open-cluster-management.io/git-path:" | head -1 | awk '{print $2}')
-echo "  Top-level subscription git-path: $TOP_LEVEL_PATH"
-if [ "$TOP_LEVEL_PATH" = "app-of-app-cluster-subs" ]; then
-    echo "  ✓ Correct"
+POLICY_NAME=$(kubectl kustomize groups/qa 2>/dev/null | grep -A1 "^kind: Policy$" | grep "name:" | awk '{print $2}' | head -1)
+echo "  Policy name rendered from groups/qa: $POLICY_NAME"
+if [ "$POLICY_NAME" = "policy-gitlab-operator" ]; then
+    echo "  OK"
 else
-    echo "  ✗ Expected: app-of-app-cluster-subs"
+    echo "  FAILED - expected policy-gitlab-operator"
     FAILED=1
 fi
 echo ""
 
-CLUSTER_PATH=$(oc kustomize app-of-app-cluster-subs/c01/ | grep "apps.open-cluster-management.io/git-path:" | head -1 | awk '{print $2}')
-echo "  Cluster c01 subscription git-path: $CLUSTER_PATH"
-if [ "$CLUSTER_PATH" = "clusters/c01" ]; then
-    echo "  ✓ Correct"
-else
-    echo "  ✗ Expected: clusters/c01"
-    FAILED=1
-fi
-echo ""
-
-# Verify Placement and PlacementBinding references
+# ---------------------------------------------------------------------------
 echo "========================================="
-echo "Placement Reference Verification"
+echo "Placement Name Verification"
 echo "========================================="
 echo ""
 
-PLACEMENT_NAME=$(oc kustomize clusters/c01/gitlab-operator/ | grep -A 3 "kind: Placement" | grep "name:" | head -1 | awk '{print $2}')
-echo "  Placement name: $PLACEMENT_NAME"
-
-BINDING_REF=$(oc kustomize clusters/c01/gitlab-operator/ | awk '/placementRef:/,/subjects:/' | grep "name:" | awk '{print $2}' | head -1)
-echo "  PlacementBinding references: $BINDING_REF"
-
-if [ "$PLACEMENT_NAME" = "$BINDING_REF" ]; then
-    echo "  ✓ References match"
-else
-    echo "  ✗ Mismatch detected!"
-    FAILED=1
-fi
+for group in qa wave1 wave2 prod; do
+    PLACEMENT=$(kubectl kustomize "groups/$group" 2>/dev/null \
+        | grep -A1 "^kind: Placement$" | grep "name:" | awk '{print $2}' | head -1)
+    BINDING_REF=$(kubectl kustomize "groups/$group" 2>/dev/null \
+        | awk '/placementRef:/,/subjects:/' | grep "name:" | awk '{print $2}' | head -1)
+    echo -n "  groups/$group: placement=$PLACEMENT  bindingRef=$BINDING_REF  "
+    if [ "$PLACEMENT" = "$BINDING_REF" ]; then
+        echo "OK"
+    else
+        echo "MISMATCH"
+        FAILED=1
+    fi
+done
 echo ""
 
-# Verify all subscription targets have kustomization.yaml
+# ---------------------------------------------------------------------------
 echo "========================================="
-echo "Subscription Target Verification"
+echo "Subscription Git-Path Verification"
 echo "========================================="
 echo ""
-echo "Verifying all git-path targets have kustomization.yaml..."
-echo ""
 
-# Check subscription 1
-GITPATH1=$(grep "git-path:" app-of-app-manifest/initialize-acm-gitops/subscription.yaml | awk '{print $2}')
-echo -n "  $GITPATH1/kustomization.yaml... "
-if [ -f "$GITPATH1/kustomization.yaml" ]; then
-    echo "✓"
+GROUP_SUB_PATH=$(grep "git-path:" app-of-app-manifest/initialize-acm-gitops/group-subscription.yaml | awk '{print $2}')
+echo -n "  group-subscription git-path: $GROUP_SUB_PATH ... "
+if [ "$GROUP_SUB_PATH" = "app-of-app-group-subs" ]; then
+    echo "OK"
 else
-    echo "✗ MISSING"
+    echo "FAILED - expected app-of-app-group-subs"
     FAILED=1
 fi
 
-# Check subscription 2
-GITPATH2=$(grep "git-path:" app-of-app-cluster-subs/c01/subscription.yaml | awk '{print $2}')
-echo -n "  $GITPATH2/kustomization.yaml... "
-if [ -f "$GITPATH2/kustomization.yaml" ]; then
-    echo "✓"
-else
-    echo "✗ MISSING"
-    FAILED=1
-fi
-
+for group in qa wave1 wave2 prod; do
+    SUB_PATH=$(grep "git-path:" "app-of-app-group-subs/$group/subscription.yaml" | awk '{print $2}')
+    echo -n "  $group subscription git-path: $SUB_PATH ... "
+    if [ "$SUB_PATH" = "groups/$group" ]; then
+        echo "OK"
+    else
+        echo "FAILED - expected groups/$group"
+        FAILED=1
+    fi
+done
 echo ""
 
-# Final result
+# ---------------------------------------------------------------------------
+echo "========================================="
+echo "Kustomization File Existence Check"
+echo "========================================="
+echo ""
+
+for dir in groups/qa groups/wave1 groups/wave2 groups/prod \
+           app-of-app-group-subs/qa app-of-app-group-subs/wave1 \
+           app-of-app-group-subs/wave2 app-of-app-group-subs/prod \
+           app-of-app-group-subs app-of-app-manifest; do
+    echo -n "  $dir/kustomization.yaml ... "
+    if [ -f "$dir/kustomization.yaml" ]; then
+        echo "OK"
+    else
+        echo "MISSING"
+        FAILED=1
+    fi
+done
+echo ""
+
+# ---------------------------------------------------------------------------
 echo "========================================="
 if [ $FAILED -eq 0 ]; then
-    echo "✓ All validations passed!"
-    echo "========================================="
-    exit 0
+    echo "All validations passed."
 else
-    echo "✗ Validation failed. Please fix the errors above."
-    echo "========================================="
-    exit 1
+    echo "Validation FAILED. Fix the errors above."
 fi
+echo "========================================="
+[ $FAILED -eq 0 ]

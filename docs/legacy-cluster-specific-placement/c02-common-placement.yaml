@@ -1,0 +1,26 @@
+# DEPRECATED: This file demonstrates the old cluster-specific placement model.
+# GitLab operator placement is now handled by label-based group placements in groups/.
+# See groups/qa/placement.yaml, groups/wave1/placement.yaml, etc.
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: gitlab-operator-placement
+  namespace: c02-policies
+spec:
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchLabels:
+            name: c02
+---
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: serverless-operator-placement
+  namespace: c02-policies
+spec:
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchLabels:
+            name: c02

@@ -1,11 +1,12 @@
 apiVersion: cluster.open-cluster-management.io/v1beta1
 kind: Placement
 metadata:
-  name: serverless-operator-placement
-  namespace: c02-policies
+  name: placement-gitlab-operator-wave2
+  namespace: policies
 spec:
   predicates:
     - requiredClusterSelector:
         labelSelector:
           matchLabels:
-            name: c02
+            operator-upgrade-wave: wave2
+            operators-ready: "true"
