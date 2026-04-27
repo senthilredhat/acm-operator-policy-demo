@@ -50,13 +50,6 @@ validate_build "app-of-app-group-subs"       "app-of-app-group-subs (subscriptio
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "Cluster Subscriptions (serverless-operator, legacy pattern)"
-validate_build "app-of-app-cluster-subs/c01" "app-of-app-cluster-subs/c01"
-validate_build "app-of-app-cluster-subs/c02" "app-of-app-cluster-subs/c02"
-validate_build "app-of-app-cluster-subs"     "app-of-app-cluster-subs (subscription target)"
-echo ""
-
-# ---------------------------------------------------------------------------
 echo "Bootstrap"
 validate_build "app-of-app-manifest" "app-of-app-manifest"
 echo ""
@@ -67,12 +60,19 @@ echo "Policy Name Verification"
 echo "========================================="
 echo ""
 
-POLICY_NAME=$(kubectl kustomize groups/qa 2>/dev/null | grep -A1 "^kind: Policy$" | grep "name:" | awk '{print $2}' | head -1)
-echo "  Policy name rendered from groups/qa: $POLICY_NAME"
-if [ "$POLICY_NAME" = "policy-gitlab-operator" ]; then
-    echo "  OK"
+echo -n "  groups/qa contains policy-gitlab-operator ... "
+if kubectl kustomize groups/qa 2>/dev/null | grep -q "name: policy-gitlab-operator"; then
+    echo "OK"
 else
-    echo "  FAILED - expected policy-gitlab-operator"
+    echo "FAILED"
+    FAILED=1
+fi
+
+echo -n "  groups/qa contains serverless-operator-policy ... "
+if kubectl kustomize groups/qa 2>/dev/null | grep -q "name: serverless-operator-policy"; then
+    echo "OK"
+else
+    echo "FAILED"
     FAILED=1
 fi
 echo ""
@@ -109,7 +109,7 @@ echo -n "  group-subscription git-path: $GROUP_SUB_PATH ... "
 if [ "$GROUP_SUB_PATH" = "app-of-app-group-subs" ]; then
     echo "OK"
 else
-    echo "FAILED - expected app-of-app-group-subs"
+    echo "FAILED  (expected app-of-app-group-subs)"
     FAILED=1
 fi
 
@@ -132,7 +132,7 @@ echo "========================================="
 echo ""
 
 for dir in groups/qa groups/wave1 groups/wave2 groups/prod \
-           app-of-app-group-subs/qa app-of-app-group-subs/wave1 \
+           app-of-app-group-subs/qa app-of-app-group-subs/wave1  \
            app-of-app-group-subs/wave2 app-of-app-group-subs/prod \
            app-of-app-group-subs app-of-app-manifest; do
     echo -n "  $dir/kustomization.yaml ... "

@@ -3,5 +3,8 @@ kind: Kustomization
 
 resources:
   - ../../components/gitlab-operator
+  - ../../components/serverless-operator
   - placement.yaml
   - placement-binding.yaml
+  - placement-serverless-operator.yaml
+  - placement-binding-serverless.yaml

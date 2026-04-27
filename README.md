@@ -29,17 +29,19 @@ ACM Channel (acm-operator-policy-demo)
   │
   ▼
 Bootstrap (oc apply -k app-of-app-manifest/)
-  ├── Top-level subscription → app-of-app-group-subs    (GitLab operator groups)
-  └── Cluster subscription  → app-of-app-cluster-subs  (serverless-operator, legacy)
+  └── Group subscription → app-of-app-group-subs
   │
   ▼
 Group subscriptions (qa / wave1 / wave2 / prod)
   │  Each subscription syncs one groups/<name>/ folder to the hub
   ▼
 groups/qa/
-  ├── policy-gitlab-operator     (from components/gitlab-operator)
+  ├── policy-gitlab-operator        (from components/gitlab-operator)
   ├── placement-gitlab-operator-qa  (matchLabels: environment=qa, operators-ready=true)
-  └── binding-gitlab-operator-qa
+  ├── binding-gitlab-operator-qa
+  ├── policy-serverless-operator    (from components/serverless-operator)
+  ├── placement-serverless-operator-qa
+  └── binding-serverless-operator-qa
   │
   ▼
 All ManagedClusters whose labels match
@@ -76,22 +78,13 @@ All ManagedClusters whose labels match
 │   ├── wave2/
 │   └── prod/
 │
-├── app-of-app-cluster-subs/      # Cluster-level subscriptions (serverless-operator)
-│   ├── kustomization.yaml
-│   ├── c01/
-│   └── c02/
-│
-├── clusters/                     # Cluster-specific configs (serverless-operator only)
-│   ├── c01/
-│   └── c02/
-│
 ├── app-of-app-manifest/          # Bootstrap — one-shot initialization
 │   ├── channel/
 │   └── initialize-acm-gitops/
 │
 └── docs/
     ├── operator-upgrade-guide.md
-    └── legacy-cluster-specific-placement/  # Archived per-cluster files (reference only)
+    └── legacy-cluster-specific-placement/  # Archived per-cluster files (git history reference)
 ```
 
 ## Label Model
@@ -128,6 +121,8 @@ a cluster to pause rollout without changing any policy or placement objects.
 
 ## Object Names (hub `policies` namespace)
 
+### GitLab Operator
+
 | Group | Placement | PlacementBinding | Policy |
 |---|---|---|---|
 | qa | `placement-gitlab-operator-qa` | `binding-gitlab-operator-qa` | `policy-gitlab-operator` |
@@ -135,8 +130,14 @@ a cluster to pause rollout without changing any policy or placement objects.
 | wave2 | `placement-gitlab-operator-wave2` | `binding-gitlab-operator-wave2` | `policy-gitlab-operator` |
 | prod | `placement-gitlab-operator-prod` | `binding-gitlab-operator-prod` | `policy-gitlab-operator` |
 
-The same `policy-gitlab-operator` is shared; each group binds it through its
-own unique Placement.
+### Serverless Operator (QA only)
+
+| Group | Placement | PlacementBinding | Policy |
+|---|---|---|---|
+| qa | `placement-serverless-operator-qa` | `binding-serverless-operator-qa` | `serverless-operator-policy` |
+
+The same policy definition is shared across all clusters that match the group's
+label selector — no per-cluster copies are needed.
 
 ## Prerequisites
 
@@ -156,7 +157,6 @@ This creates:
 - `acm-operator-policy-demo-ns` namespace and Git Channel
 - `policies` namespace with **ManagedClusterSetBinding** for the `global` cluster set
 - ClusterRoleBinding granting subscription-admin privileges
-- Top-level subscription (`cluster-subscriptions`) → `app-of-app-cluster-subs`
 - Group subscription (`group-subscriptions`) → `app-of-app-group-subs`
 
 Verify:
