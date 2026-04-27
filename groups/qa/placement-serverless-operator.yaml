@@ -9,4 +9,3 @@ spec:
         labelSelector:
           matchLabels:
             environment: qa
-            operators-ready: "true"
